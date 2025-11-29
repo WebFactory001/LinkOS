@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LinkOS</title>
+<link rel="icon" href="logos/logo.png" type="image/png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0066ff">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="boot-screen"> 
+  <div class="boot-center"> 
+    <img src="logos/logo.png" class="boot-logo"> 
+  </div> 
+</div>
+
+  <!-- Top menu bar -->
+  <div class="menubar">
+    <div class="center">
+      <button class="menu-button" id="fullscreenBtn">🖥️ Fullscreen</button>
+      <button class="menu-button" id="bgChangeBtn">🎨 Change Background</button>
+      <div class="status" id="clock">00:00</div>
+    </div>
+  </div>
+
+  <!-- Clean desktop -->
+  <div class="desktop" id="desktop"></div>
+
+  <!-- Windows-style taskbar -->
+  <div class="taskbar" id="taskbar">
+    <!-- Active apps will appear here -->
+  </div>
+
+  <!-- macOS-style dock -->
+  <div class="dock-wrap" id="dockWrap">
+    <div class="dock" id="dock">
+      <!-- icons inserted by JS -->
+    </div>
+  </div>
+
+  <!-- Launchpad -->
+  <div class="launchpad" id="launchpad"></div>
+
+<script>
+  // Background images array
+  const backgrounds = [
+    'wallpapers/wallpaper1.png',
+    'wallpapers/wallpaper2.png',
+    'wallpapers/wallpaper3.png',
+    'wallpapers/wallpaper4.png',
+    'wallpapers/wallpaper5.png',
+    'wallpapers/wallpaper6.png',
+    'wallpapers/wallpaper7.png',	
+    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2071&q=80',
+    'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2074&q=80',
+    'https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2076&q=80',
+    
+ ];
+  
+  let currentBgIndex = 0;
+
+  /* App configuration */
+  const apps = [
+    {id:'game', name:'game', icon:'logos/game.png', url:'http://slither.io/'},
+    {id:'Calculator', name:'Calculator', icon:'logos/calculator.png', url:'https://www.geogebra.org/calculator'},
+    {id:'Wiki', name:'Wiki', icon:'logos/wikipedia.png', url:'https://www.wikipedia.org/'},
+    {id:'Wiki', name:'Chat-terminal', icon:'logos/terminal.png', url:'https://chat-terminal.onrender.com/'},
+  ];
+
+  /* Global state */
+  const desktop = document.getElementById('desktop');
+  const taskbar = document.getElementById('taskbar');
+  const dock = document.getElementById('dock');
+  const launchpad = document.getElementById('launchpad');
+  const bgChangeBtn = document.getElementById('bgChangeBtn');
+  const fullscreenBtn = document.getElementById('fullscreenBtn');
+  let zCounter = 100;
+  const openWindows = new Map();
+
+  /* Background change functionality */
+  bgChangeBtn.onclick = () => {
+    currentBgIndex = (currentBgIndex + 1) % backgrounds.length;
+    document.body.style.background = `url('${backgrounds[currentBgIndex]}') center/cover no-repeat`;
+  };
+
+  /* Fullscreen functionality */
+  fullscreenBtn.onclick = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.log(`Error: ${err.message}`);
+      });
+      fullscreenBtn.textContent = '📺 Exit';
+    } else {
+      document.exitFullscreen();
+      fullscreenBtn.textContent = '🖥️ Fullscreen';
+    }
+  };
+
+  // Update button text when fullscreen changes
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+      fullscreenBtn.textContent = '🖥️ Fullscreen';
+    }
+  });
+
+  /* Clock */
+  function tickClock(){
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2,'0');
+    const mm = String(now.getMinutes()).padStart(2,'0');
+    const options = { weekday: 'short', month: 'short', day: 'numeric' };
+    const date = now.toLocaleDateString('en-US', options);
+    document.getElementById('clock').innerHTML = `${hh}:${mm} • ${date}`;
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  /* Build Dock */
+  function buildDock(){
+    dock.innerHTML = '';
+    
+    // Launchpad icon
+    const lp = createDockIcon({id:'launchpad', name:'Launchpad', icon:'https://cdn-icons-png.flaticon.com/512/1828/1828899.png'});
+    lp.addEventListener('click', toggleLaunchpad);
+    dock.appendChild(lp);
+
+    // App icons
+    apps.forEach(app => {
+      const d = createDockIcon(app);
+      d.onclick = () => toggleAppWindow(app);
+      dock.appendChild(d);
+    });
+  }
+
+  function createDockIcon(app){
+    const el = document.createElement('div');
+    el.className = 'dock-icon';
+    el.dataset.app = app.id;
+    el.title = app.name;
+    el.innerHTML = `
+      <img src="${app.icon}" alt="${app.name}">
+      <div class="dot"></div>
+    `;
+    return el;
+  }
+
+  /* Build Launchpad */
+  function buildLaunchpad(){
+    launchpad.innerHTML = '';
+    apps.forEach(app => {
+      const c = document.createElement('div');
+      c.className = 'app-card';
+      c.innerHTML = `
+        <img src="${app.icon}" alt="${app.name}">
+        <span>${app.name}</span>
+      `;
+      c.onclick = ()=>{ openApp(app); hideLaunchpad(); };
+      launchpad.appendChild(c);
+    });
+  }
+
+  /* Taskbar management */
+  function updateTaskbar(){
+    taskbar.innerHTML = '';
+    openWindows.forEach((win, appId) => {
+      const app = apps.find(a => a.id === appId);
+      if(app){
+        const taskbarApp = document.createElement('div');
+        taskbarApp.className = 'taskbar-app';
+        if(!win.dataset.minimized || win.dataset.minimized === 'false'){
+          taskbarApp.classList.add('active');
+        }
+        taskbarApp.textContent = app.name;
+        taskbarApp.onclick = () => toggleAppWindow(app);
+        taskbar.appendChild(taskbarApp);
+      }
+    });
+  }
+
+  /* Window management */
+  function toggleAppWindow(app){
+    const w = openWindows.get(app.id);
+    if(!w){
+      openApp(app);
+    } else {
+      if(w.dataset.minimized === 'true'){
+        restoreWindow(app.id);
+      } else {
+        minimizeWindow(app.id);
+      }
+    }
+  }
+
+  function openApp(app){
+    if(openWindows.has(app.id)){
+      const existing = openWindows.get(app.id);
+      if(existing.dataset.minimized === 'true') restoreWindow(app.id);
+      focusWindow(existing);
+      return;
+    }
+
+    const win = document.createElement('div');
+    win.className = 'app-window opening active';
+    win.dataset.appId = app.id;
+    win.style.left = `${Math.max(40, 120 + Math.random()*220)}px`;
+    win.style.top = `${Math.max(60, 60 + Math.random()*120)}px`;
+    win.style.zIndex = ++zCounter;
+    win.dataset.minimized = 'false';
+
+    const header = document.createElement('div');
+    header.className = 'win-header';
+    header.innerHTML = `
+      <div class="win-controls">
+        <div class="circle close" title="Close"></div>
+        <div class="circle min" title="Minimize"></div>
+        <div class="circle max" title="Maximize"></div>
+      </div>
+      <div class="win-title">${app.name}</div>
+      <div style="width:72px"></div>
+    `;
+
+    const body = document.createElement('div');
+    body.className = 'win-body';
+    const iframe = document.createElement('iframe');
+    iframe.src = app.url;
+    iframe.loading = 'lazy';
+    body.appendChild(iframe);
+
+    win.appendChild(header);
+    win.appendChild(body);
+    document.body.appendChild(win);
+    openWindows.set(app.id, win);
+
+    setDockActive(app.id, true);
+    updateTaskbar();
+
+    header.querySelector('.circle.close').onclick = (e)=>{ 
+      e.stopPropagation(); 
+      closeWindow(app.id); 
+    };
+    
+    header.querySelector('.circle.min').onclick = (e)=>{ 
+      e.stopPropagation(); 
+      minimizeWindow(app.id); 
+    };
+    
+    header.querySelector('.circle.max').onclick = (e)=>{ 
+      e.stopPropagation(); 
+      maximizeWindow(app.id); 
+    };
+
+    makeDraggable(win, header);
+    win.addEventListener('mousedown', ()=>{ focusWindow(win); });
+
+    setTimeout(()=>win.classList.remove('opening'), 200);
+    focusWindow(win);
+  }
+
+  function closeWindow(appId){
+    const win = openWindows.get(appId);
+    if(!win) return;
+    win.remove();
+    openWindows.delete(appId);
+    setDockActive(appId, false);
+    updateTaskbar();
+  }
+
+  function minimizeWindow(appId){
+    const win = openWindows.get(appId);
+    if(!win || win.dataset.minimized === 'true') return;
+    win.style.display = 'none';
+    win.dataset.minimized = 'true';
+    setDockActive(appId, true);
+    updateTaskbar();
+  }
+
+  function restoreWindow(appId){
+    const win = openWindows.get(appId);
+    if(!win) return;
+    win.style.display = 'flex';
+    win.dataset.minimized = 'false';
+    focusWindow(win);
+    setDockActive(appId, true);
+    updateTaskbar();
+  }
+
+  function maximizeWindow(appId){
+    const win = openWindows.get(appId);
+    if(!win) return;
+    
+    if(win.dataset.maxed === 'true'){
+      win.style.width = win.dataset.prevWidth;
+      win.style.height = win.dataset.prevHeight;
+      win.style.left = win.dataset.prevLeft;
+      win.style.top = win.dataset.prevTop;
+      win.dataset.maxed = 'false';
+    } else {
+      win.dataset.prevWidth = win.style.width || win.offsetWidth + 'px';
+      win.dataset.prevHeight = win.style.height || win.offsetHeight + 'px';
+      win.dataset.prevLeft = win.style.left;
+      win.dataset.prevTop = win.style.top;
+      
+      const pad = 10;
+      win.style.left = pad + 'px';
+      win.style.top = (40 + pad) + 'px';
+      win.style.width = `calc(100% - ${pad*2}px)`;
+      win.style.height = `calc(100% - ${pad*2}px - var(--dock-height))`;
+      win.dataset.maxed = 'true';
+    }
+    focusWindow(win);
+  }
+
+  function focusWindow(winOrElem){
+    const win = (typeof winOrElem === 'string' ? openWindows.get(winOrElem) : winOrElem);
+    if(!win) return;
+    
+    win.style.zIndex = ++zCounter;
+    
+    document.querySelectorAll('.app-window').forEach(w=>{
+      w.classList.remove('active');
+      w.classList.add('inactive');
+    });
+    
+    win.classList.add('active');
+    win.classList.remove('inactive');
+    win.style.display = 'flex';
+    win.dataset.minimized = 'false';
+    updateTaskbar();
+  }
+
+  function setDockActive(appId, active){
+    const dockIcon = dock.querySelector(`.dock-icon[data-app="${appId}"]`);
+    if(!dockIcon) return;
+    if(active) dockIcon.classList.add('active');
+    else dockIcon.classList.remove('active');
+  }
+
+  /* Draggable windows */
+  function makeDraggable(el, handle){
+    let startX, startY, startLeft, startTop, dragging=false;
+    
+    handle.addEventListener('mousedown', (e)=>{
+      if(e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = parseInt(el.style.left) || el.offsetLeft;
+      startTop = parseInt(el.style.top) || el.offsetTop;
+      
+      el.style.transition = 'none';
+      focusWindow(el);
+      
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+    
+    function onMove(e){
+      if(!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      el.style.left = (startLeft + dx) + 'px';
+      el.style.top = (startTop + dy) + 'px';
+    }
+    
+    function onUp(){
+      dragging = false;
+      el.style.transition = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+  }
+
+  /* Launchpad functions */
+  function toggleLaunchpad(){
+    launchpad.classList.toggle('show');
+  }
+
+  function hideLaunchpad(){ 
+    launchpad.classList.remove('show');
+  }
+
+  /* Initialize */
+  buildDock();
+  buildLaunchpad();
+
+  /* Event listeners */
+  document.addEventListener('click', (e)=>{
+    if(launchpad.classList.contains('show')){
+      const inside = launchpad.contains(e.target) || e.target.closest('.dock') || e.target.closest('.dock-wrap');
+      if(!inside) hideLaunchpad();
+    }
+  });
+
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape') hideLaunchpad();
+  });
+
+  // Boot screen
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      document.getElementById('boot-screen').style.display = 'none';
+    }, 3000);
+  });
+</script>
+<script>
+  // Register Service Worker for PWA
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js')
+        .then((registration) => {
+          console.log('SW registered: ', registration);
+        })
+        .catch((registrationError) => {
+          console.log('SW registration failed: ', registrationError);
+        });
+    });
+  }
+</script>
+</body>
+</html>
